@@ -1,0 +1,27 @@
+{
+  "name": "twitter memo",
+  "description": "Base Level Extension",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "hello.html",
+    "default_icon": "hello_extensions.png"
+  },
+  "permissions": [
+    "tabs",
+    "activeTab", 
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "scripts/background.js"
+  },
+  "content_scripts": [
+    {
+      "js": ["scripts/content.js"],
+      "matches": [
+        "https://twitter.com/*"
+      ]
+    }
+  ]
+}
