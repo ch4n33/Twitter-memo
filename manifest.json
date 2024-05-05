@@ -18,7 +18,10 @@
   },
   "content_scripts": [
     {
-      "js": ["scripts/content.js"],
+      "js": [
+        "scripts/content.js",
+        "scripts/memo.js"
+      ],
       "matches": [
         "https://twitter.com/*"
       ]

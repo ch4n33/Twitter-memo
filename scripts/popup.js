@@ -12,6 +12,10 @@ function getTabID() {
     });
 }
 
+function getMemo(id) {
+    return localStorage.getItem(String(id));
+}
+
 async function onWindowLoad() {
     var tid = getTabID().then(tabId => {
         return tabId;
@@ -34,10 +38,12 @@ var id = 0;
 var old_memo = "";
 chrome.runtime.onMessage.addListener(
     function(request, sender, sendResponse) {
-        console.log(request.id, request.memo);
+        console.log(request.id);
         id = request.id;
-        old_memo = request.memo;
+        old_memo = getMemo(id) || "no memo";
+        console.log('id : ',request.id);
+        console.log('old_memo : ',old_memo);
         sendResponse({received: true});
     }
 );
-document.getElementById('memoInput').value = old_memo
+document.getElementById('memoInput').placeholder = old_memo

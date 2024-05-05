@@ -10,11 +10,17 @@ function getTabID() {
         });
     });
 }
+
 console.log("content.js")
+var tid = getTabID().then(tabId => {
+    return tabId;
+}).catch(error => {
+    console.error(error);
+});
 chrome.scripting.executeScript(
     {
         target: {
-            tabId: await getTabID(),
+            tabId: await tid,
             allFrames: true
         },
         files: ["memo.js"]
