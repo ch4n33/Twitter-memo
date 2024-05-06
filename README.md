@@ -1,11 +1,11 @@
 # Twitter memo
-## version 1.0
-### 용어
+## version 0.0.1
+# 용어
 1. id : Twitter User Identifier
 1. name : Twitter User handle
-##  기능
+#  기능
 
-### 구현
+## 구현
 1.  background
     *   localStorage에 id: memo 쌍을 저장
 1.  popup
@@ -20,7 +20,7 @@
 1.  undefined 뜨는거 고치기 
 1.  /home 방문 다음 프로필 페이지 방문 시 메모 미표시 오류
     *   head > script:nth-child(50) 오류 해결하기 
-###    미구현
+##    미구현
 
 1.  popup에서 메모 리스트 확인하기
 1.  popup에서 메모 삭제하기
