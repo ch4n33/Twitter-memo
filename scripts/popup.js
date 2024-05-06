@@ -12,38 +12,67 @@ function getTabID() {
     });
 }
 
-function getMemo(id) {
-    return localStorage.getItem(String(id));
-}
+var tid = getTabID().then(tabId => {
+    return tabId;
+}).catch(error => {
+    console.error(error);
+});
 
-async function onWindowLoad() {
-    var tid = getTabID().then(tabId => {
-        return tabId;
-    }).catch(error => {
-        console.error(error);
-    });
-    console.log(tid, "tab id", typeof(tid));
-    chrome.scripting.executeScript({
-        target : {tabId: await tid, allFrames: true}, 
-        files: ["scripts/memo.js"]
-        }).then(
-        injectionResults =>{
-			console.log("Injection Success on popup.js")
-        }
-    );
-}
-window.onload = onWindowLoad;
+// async function onWindowLoad() {
+
+//     console.log(await tid, "tab id", typeof(tid));
+//     chrome.scripting.executeScript({
+//         target : {tabId: await tid, allFrames: true}, 
+//         files: ["scripts/content.js"]
+//         }).then(
+//         injectionResults =>{
+// 			console.log("Injection Success on popup.js")
+//         }
+//     );
+// }
+// window.onload = onWindowLoad;
 
 var id = 0;
-var old_memo = "";
-chrome.runtime.onMessage.addListener(
-    function(request, sender, sendResponse) {
-        console.log(request.id);
-        id = request.id;
-        old_memo = getMemo(id) || "no memo";
-        console.log('id : ',request.id);
-        console.log('old_memo : ',old_memo);
-        sendResponse({received: true});
+
+async function setMemo(id, memo) {
+    await chrome.runtime.sendMessage({action: 'setMemo', id: id, memo: memo}, function(response) {
+        console.log(response.res);
+    });
+}
+
+var target = document.getElementById('memoInput')
+
+chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    var tabId = tabs[0].id;
+    chrome.tabs.sendMessage(tabId, {action: 'tmemo_requestData'}, async function(response) {
+        console.log('popup.js:response=' + response)
+        if (response.id === 'not found') {
+            console.log('id not found');
+        }
+        id = response.id;
+        console.log('popup.js:id=',id, Date.now());
+        await chrome.runtime.sendMessage({action: 'getMemo', id: id}, function(response) {
+            console.log('popup.js: getMemo:', response, Date.now());
+            memo = response.res;
+            target.placeholder = memo || "no memo";
+        });
+    });
+});
+
+
+document.getElementById('memoButton').addEventListener('click', ()=>{
+    setMemo(id, target.value);
+    target.value = '';
+    alert('The memo is saved. Please refresh to see the change.');
+    location.replace(location.href);
+    
+});
+
+document.getElementById('memoInput').addEventListener('keypress', (e)=>{
+    if (e.key === 'Enter') {
+        setMemo(id, target.value);
+        target.value = '';
+        alert('The memo is saved. Please refresh to see the change.');
+        location.replace(location.href);
     }
-);
-document.getElementById('memoInput').placeholder = old_memo
+});

@@ -1,5 +1,5 @@
 # Twitter memo
-## version 0.1
+## version 1.0
 ### 용어
 1. id : Twitter User Identifier
 1. name : Twitter User handle
@@ -15,6 +15,4 @@
     *   현재 페이지에서 css selector를 이용해 id를 얻음
     *   현재 페이지에 필요한 memo가 존재할 경우 페이지를 수정해서 프로필에 memo를 표시
 ####    미구현
-1.  background에 저장 기능을 옮기기
-1.  popup에서 메모 리스트 확인하기
 1.  content에서 메모 표시
