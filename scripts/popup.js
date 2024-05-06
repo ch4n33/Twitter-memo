@@ -37,6 +37,7 @@ chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
         }
         id = response.id;
         await chrome.runtime.sendMessage({action: 'getMemo', id: id}, function(response) {
+            console.log(response.res, id);
             memo = response.res;
             target.placeholder = memo || "no memo";
         });

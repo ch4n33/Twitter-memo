@@ -68,6 +68,7 @@ chrome.runtime.onMessage.addListener(
         }
         console.log('content.js:action=' + request.action);
         if (id === 'not found') {
+            console.log('id not found in requestData');
             sendResponse({'id': 'not found'})
         }
         else{
