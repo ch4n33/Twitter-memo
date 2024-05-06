@@ -21,9 +21,7 @@ const observer = new MutationObserver(async (mutationList, observer) => {
     if (id !== 'not found'){
         console.log('found id :' + id.identifier);
         observer.disconnect();
-        console.log('calling getMemo', Date.now());
         await chrome.runtime.sendMessage({action: 'getMemo', id: id.identifier}, function(response) {
-            console.log('content.js: getMemo:', response, Date.now());
             memo = response.res;
             if (memo !== ''){
                 Array.from(document.querySelectorAll(memoPosition))[0].textContent += ' : \'' + memo + '\'';

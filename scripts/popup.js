@@ -18,19 +18,6 @@ var tid = getTabID().then(tabId => {
     console.error(error);
 });
 
-// async function onWindowLoad() {
-
-//     console.log(await tid, "tab id", typeof(tid));
-//     chrome.scripting.executeScript({
-//         target : {tabId: await tid, allFrames: true}, 
-//         files: ["scripts/content.js"]
-//         }).then(
-//         injectionResults =>{
-// 			console.log("Injection Success on popup.js")
-//         }
-//     );
-// }
-// window.onload = onWindowLoad;
 
 var id = 0;
 
@@ -45,14 +32,11 @@ var target = document.getElementById('memoInput')
 chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     var tabId = tabs[0].id;
     chrome.tabs.sendMessage(tabId, {action: 'tmemo_requestData'}, async function(response) {
-        console.log('popup.js:response=' + response)
         if (response.id === 'not found') {
             console.log('id not found');
         }
         id = response.id;
-        console.log('popup.js:id=',id, Date.now());
         await chrome.runtime.sendMessage({action: 'getMemo', id: id}, function(response) {
-            console.log('popup.js: getMemo:', response, Date.now());
             memo = response.res;
             target.placeholder = memo || "no memo";
         });
