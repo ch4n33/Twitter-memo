@@ -24,6 +24,7 @@ const observer = new MutationObserver(async (mutationList, observer) => {
         await chrome.runtime.sendMessage({action: 'getMemo', id: id.identifier}, function(response) {
             memo = response.res;
             if (memo !== ''){
+                console.log('memo is printed on document' + memo);
                 Array.from(document.querySelectorAll(memoPosition))[0].textContent += ' : \'' + memo + '\'';
             }
         });
