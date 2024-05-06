@@ -1,6 +1,6 @@
 {
   "name": "twitter memo",
-  "description": "Base Level Extension",
+  "description": "Track anyone on Twitter and make notes on their profile.",
   "version": "1.0",
   "manifest_version": 3,
   "action": {
