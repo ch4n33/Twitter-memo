@@ -4,7 +4,8 @@
 1. id : Twitter User Identifier
 1. name : Twitter User handle
 #  기능
-
+1.  트위터 유저 프로필 페이지에서 저장된 메모를 볼 수 있음
+2.  트위터 유저 프로필 페이지에서, 확장프로그램을 클릭해서 나온 팝업 창을 통해 메모를 추가할 수 있음
 ## 구현
 1.  background
     *   localStorage에 id: memo 쌍을 저장
