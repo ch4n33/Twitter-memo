@@ -1,5 +1,5 @@
 # Twitter memo
-## version 0.0.1
+## version 0.0.2
 # 용어
 1. id : Twitter User Identifier
 1. name : Twitter User handle
@@ -20,8 +20,7 @@
 1.  undefined 뜨는거 고치기 
 1.  /home 방문 다음 프로필 페이지 방문 시 메모 미표시 오류
     *   head > script:nth-child(50) 오류 해결하기 
-##    미구현
-
 1.  popup에서 메모 리스트 확인하기
+##    미구현
 1.  popup에서 메모 삭제하기
 1.  플러그인에서 새로고침 머시기
