@@ -1,0 +1,51 @@
+/* 테이블을 감싸는 div에 스타일 적용 */
+#tableContainer {
+    max-height: 300px; /* 테이블 컨테이너의 최대 높이 지정 */
+    overflow-y: auto; /* 수직 스크롤을 활성화하여 내용이 넘치면 스크롤 가능하도록 함 */
+    overflow-x: hidden; /* 수평 스크롤을 비활성화 */
+}
+html {
+  font-family: sans-serif;
+}
+th, td {
+  border: 1px solid rgb(190,190,190);
+  padding: 4px 6px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 글자가 너무 길면 생략 부호로 표시 */
+  
+}
+.key-cell {
+  max-width: 40px; /* 키 열의 최대 너비 설정 */
+}
+/* 값 셀 스타일 */
+.value-cell {
+  max-width: 150px; /* 키 열의 최대 너비 설정 */
+}
+.profile-cell
+{
+  max-width: 50px; /* 프로필 열의 최대 너비 설정 */
+}
+
+table {
+  border-collapse: collapse;
+  border: 2px solid rgb(200,200,200);
+  letter-spacing: 1px;
+  font-size: 0.8rem;
+}
+th {
+  background-color: rgb(235,235,235);
+}
+td {
+  text-align: center;
+}
+tr:nth-child(even) td {
+  background-color: rgb(250,250,250);
+}
+tr:nth-child(odd) td {
+  background-color: rgb(245,245,245);
+}
+caption {
+  padding: 10px;
+}
