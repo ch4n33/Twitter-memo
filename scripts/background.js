@@ -26,3 +26,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ res: 'memo is set' });
     }
 });
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action == "listMemo") {
+        chrome.storage.local.get(null, (items) => {
+            sendResponse({res : items});
+        });
+        return true;         
+    }
+});
