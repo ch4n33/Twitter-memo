@@ -1,5 +1,5 @@
 # Twitter memo
-## version 0.0.2
+## version 0.0.3
 # 용어
 1.  id : Twitter User Identifier
 1.  name : Twitter User handle
