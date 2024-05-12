@@ -12,13 +12,6 @@ function getTabID() {
     });
 }
 
-var tid = getTabID().then(tabId => {
-    return tabId;
-}).catch(error => {
-    console.error(error);
-});
-
-
 var id = 0;
 
 async function setMemo(id, memo) {
@@ -27,50 +20,62 @@ async function setMemo(id, memo) {
     });
 }
 
-var target = document.getElementById('memoInput')
+var target = document.getElementById('memoInput');
+const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?screen_name=[a-zA-Z0-9_]{1,15}$)|(([a-zA-Z0-9_]{1,15})(\/(with_replies|highlights|articles|media|likes))(\?.*)?$))/;
 
 chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     var tabId = tabs[0].id;
-    chrome.tabs.sendMessage(tabId, {action: 'tmemo_requestData'}, async function(response) {
+    var url = tabs[0].url;
+    if (!regex_twitter_handle.test(url)) {
+        target.placeholder = "not on profile page";
+        return;
+    }
+    chrome.tabs.sendMessage(tabId, {action: 'tmemo_requestData'}, function(response) {
+        if (!response) {
+            target.placeholder = "not on profile page";
+            return;
+        }
         if (response.id === 'not found') {
             console.log('id not found');
         }
         id = response.id;
-        await chrome.runtime.sendMessage({action: 'listMemo', id: id}, function(response) {
-            console.log(response.res);
-            //TODO: display all memos in shape of tables
-            const table = document.getElementById('memoTable')
-            const addMemoRow = (key, value) =>{
-                var row = table.insertRow(-1);
-                var idCell = row.insertCell(0);
-                var memoCell = row.insertCell(1);
-                var profileCell = row.insertCell(2);
-                idCell.innerHTML = key;
-                idCell.title = key; // 마우스 오버레이로 전체 키 보여주기
-                idCell.classList.add('key-cell');
-
-                memoCell.innerHTML = value;
-                memoCell.title = key; // 마우스 오버레이로 전체 키 보여주기
-                memoCell.classList.add('value-cell');
-
-                profileCell.innerHTML = 'profile';
-                profileCell.onclick = function() {
-                    window.open('https://twitter.com/intent/user?user_id=' + key);
-                }
-                profileCell.classList.add('profile-cell');
-            }
-            for (const key in response.res) {
-                if (response.res.hasOwnProperty(key)){
-                    addMemoRow(key, response.res[key]);
-                }
-            } 
-        });
-        await chrome.runtime.sendMessage({action: 'getMemo', id: id}, function(response) {
+        
+        chrome.runtime.sendMessage({action: 'getMemo', id: id}, function(response) {
             console.log(response.res, id);
             memo = response.res;
             target.placeholder = memo || "no memo";
         });
     });
+});
+
+chrome.runtime.sendMessage({action: 'listMemo', id: id}, function(response) {
+    console.log(response.res);
+    //TODO: display all memos in shape of tables
+    const table = document.getElementById('memoTable')
+    const addMemoRow = (key, value) =>{
+        var row = table.insertRow(-1);
+        var idCell = row.insertCell(0);
+        var memoCell = row.insertCell(1);
+        var profileCell = row.insertCell(2);
+        idCell.innerHTML = key;
+        idCell.title = key; // 마우스 오버레이로 전체 키 보여주기
+        idCell.classList.add('key-cell');
+
+        memoCell.innerHTML = value;
+        memoCell.title = key; // 마우스 오버레이로 전체 키 보여주기
+        memoCell.classList.add('value-cell');
+
+        profileCell.innerHTML = 'profile';
+        profileCell.onclick = function() {
+            window.open('https://twitter.com/intent/user?user_id=' + key);
+        }
+        profileCell.classList.add('profile-cell');
+    }
+    for (const key in response.res) {
+        if (response.res.hasOwnProperty(key)){
+            addMemoRow(key, response.res[key]);
+        }
+    } 
 });
 
 

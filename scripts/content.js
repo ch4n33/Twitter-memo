@@ -12,7 +12,7 @@ function getId() {
     }
 }
 
-regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)([a-zA-Z0-9_]{1,15})$/;
+const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
 
 var id = 'not found';
 const observer_initial = new MutationObserver(async (mutationList, observer) => {
@@ -26,7 +26,8 @@ const observer_initial = new MutationObserver(async (mutationList, observer) => 
             if (memo){
                 if (window.location.href === "https://twitter.com/home") return;
                 var target_handle=Array.from(document.querySelectorAll(memoPosition))[0]
-                var handle = window.location.href.match(regex_twitter_handle)[1];
+                var match = window.location.href.match(regex_twitter_handle);
+                var handle = match[3] || match[5];
                 target_handle.textContent = '@' + handle + ' : \'' + memo + '\'';
             }
         });
