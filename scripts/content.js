@@ -17,18 +17,21 @@ const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?
 var id = 'not found';
 const observer_initial = new MutationObserver(async (mutationList, observer) => {
     id = getId();
-    console.log('id: ' + id);
     if (id !== 'not found'){
-        console.log('found id :' + id.identifier);
+        // console.log('found id :' + id.identifier);
         observer.disconnect();
+        var handle = id.additionalName;
+        console.log('handle: ' + handle);
         await chrome.runtime.sendMessage({action: 'getMemo', id: id.identifier}, function(response) {
             memo = response.res;
+            var target_handle=Array.from(document.querySelectorAll(memoPosition))[0];
             if (memo){
                 if (window.location.href === "https://twitter.com/home") return;
-                var target_handle=Array.from(document.querySelectorAll(memoPosition))[0]
-                var match = window.location.href.match(regex_twitter_handle);
-                var handle = match[3] || match[5];
+                console.log('changetarget: ' + '@' + handle + ' : \'' + memo + '\'');
                 target_handle.textContent = '@' + handle + ' : \'' + memo + '\'';
+            }else{
+                console.log('not changed target: ' + '@' + handle);
+                target_handle.textContent = '@' + handle;
             }
         });
     }else if (!regex_twitter_handle.test(window.location.href)){
@@ -44,7 +47,7 @@ const observeUrlChange = () => {
     const body = document.body;
     const observer = new MutationObserver(mutations => {
         if (oldHref !== document.location.href) {
-            console.log('url changed');
+            // console.log('url changed');
             oldHref = document.location.href;
             observer_initial.observe(el, {
                 childList: true,
