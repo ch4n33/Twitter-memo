@@ -26,7 +26,8 @@ const observer_initial = new MutationObserver(async (mutationList, observer) => 
             memo = response.res;
             var target_handle=Array.from(document.querySelectorAll(memoPosition))[0];
             if (memo){
-                if (window.location.href === "https://twitter.com/home") return;
+                if (window.location.href.includes("twitter.com/home") 
+                    || window.location.href.includes("x.com/home")) return;
                 console.log('changetarget: ' + '@' + handle + ' : \'' + memo + '\'');
                 target_handle.textContent = '@' + handle + ' : \'' + memo + '\'';
             }else{

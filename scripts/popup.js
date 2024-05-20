@@ -21,7 +21,7 @@ async function setMemo(id, memo) {
 }
 
 var target = document.getElementById('memoInput');
-const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
+const regex_twitter_handle = /^https:\/\/(twitter|x)\.com\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
 
 chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     var tabId = tabs[0].id;
