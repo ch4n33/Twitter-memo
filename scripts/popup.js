@@ -21,7 +21,7 @@ async function setMemo(id, memo) {
 }
 
 var target = document.getElementById('memoInput');
-const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?screen_name=[a-zA-Z0-9_]{1,15}$)|(([a-zA-Z0-9_]{1,15})(\/(with_replies|highlights|articles|media|likes))(\?.*)?$))/;
+const regex_twitter_handle = /^https:\/\/(twitter\.com|x\.com)\/(?!home$)((intent\/user\?screen_name=[a-zA-Z0-9_]{1,15}$)|(([a-zA-Z0-9_]{1,15})(\/(with_replies|highlights|articles|media|likes))(\?.*)?$))/;
 
 chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     var tabId = tabs[0].id;
@@ -51,8 +51,8 @@ chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
 chrome.runtime.sendMessage({action: 'listMemo', id: id}, function(response) {
     console.log(response.res);
     //TODO: display all memos in shape of tables
-    const table = document.getElementById('memoTable')
-    const addMemoRow = (key, value) =>{
+    const table = document.getElementById('memoTable');
+    const addMemoRow = (key, value) => {
         var row = table.insertRow(-1);
         var idCell = row.insertCell(0);
         var memoCell = row.insertCell(1);
@@ -67,27 +67,30 @@ chrome.runtime.sendMessage({action: 'listMemo', id: id}, function(response) {
 
         profileCell.innerHTML = 'profile';
         profileCell.onclick = function() {
-            window.open('https://twitter.com/intent/user?user_id=' + key);
-        }
+            const currentUrl = window.location.href;
+            let domain = 'twitter.com';
+            if (currentUrl.includes('x.com')) {
+                domain = 'x.com';
+            }
+            window.open(`https://${domain}/intent/user?user_id=${key}`);
+        };
         profileCell.classList.add('profile-cell');
-    }
+    };
     for (const key in response.res) {
-        if (response.res.hasOwnProperty(key)){
+        if (response.res.hasOwnProperty(key)) {
             addMemoRow(key, response.res[key]);
         }
     } 
 });
 
-
-document.getElementById('memoButton').addEventListener('click', ()=>{
+document.getElementById('memoButton').addEventListener('click', () => {
     setMemo(id, target.value);
     target.value = '';
     alert('The memo is saved. Please refresh to see the change.');
     location.replace(location.href);
-    
 });
 
-document.getElementById('memoInput').addEventListener('keypress', (e)=>{
+document.getElementById('memoInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         setMemo(id, target.value);
         target.value = '';
@@ -95,4 +98,3 @@ document.getElementById('memoInput').addEventListener('keypress', (e)=>{
         location.replace(location.href);
     }
 });
-

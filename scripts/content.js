@@ -12,7 +12,7 @@ function getId() {
     }
 }
 
-const regex_twitter_handle = /^https:\/\/twitter\.com\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
+const regex_twitter_handle = /^https:\/\/(twitter\.com|x\.com)\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
 
 var id = 'not found';
 const observer_initial = new MutationObserver(async (mutationList, observer) => {
@@ -24,20 +24,19 @@ const observer_initial = new MutationObserver(async (mutationList, observer) => 
         await chrome.runtime.sendMessage({action: 'getMemo', id: id.identifier}, function(response) {
             memo = response.res;
             if (memo){
-                if (window.location.href === "https://twitter.com/home") return;
-                var target_handle=Array.from(document.querySelectorAll(memoPosition))[0]
+                if (window.location.href.includes("twitter.com/home") || window.location.href.includes("x.com/home")) return;
+                var target_handle = Array.from(document.querySelectorAll(memoPosition))[0];
                 var match = window.location.href.match(regex_twitter_handle);
                 var handle = match[3] || match[5];
                 target_handle.textContent = '@' + handle + ' : \'' + memo + '\'';
             }
         });
-    }else if (!regex_twitter_handle.test(window.location.href)){
+    } else if (!regex_twitter_handle.test(window.location.href)){
         observer.disconnect();
     }
 });
 
 const el = document.head;
-
 
 const observeUrlChange = () => {
     let oldHref = document.location.href;
@@ -72,7 +71,7 @@ chrome.runtime.onMessage.addListener(
             console.log('id not found in requestData');
             sendResponse({'id': 'not found'})
         }
-        else{
+        else {
             sendResponse({'id': id.identifier});
         }
     }
