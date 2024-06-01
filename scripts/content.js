@@ -1,5 +1,6 @@
 const memoPosition = '#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > div:nth-child(3) > div > div > div > div > div.css-175oi2r.r-6gpygo.r-14gqq1x > div.css-175oi2r.r-1wbh5a2.r-dnmrzs.r-1ny4l3l > div > div.css-175oi2r.r-1awozwy.r-18u37iz.r-1wbh5a2 > div > div > div > span';
 const observePosition = '#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > div:nth-child(3) > div > div > div > div > div.css-175oi2r.r-6gpygo.r-14gqq1x > div.css-175oi2r.r-1wbh5a2.r-dnmrzs.r-1ny4l3l > div';
+
 function getId() {
     var a = document.querySelectorAll('script[type="application/ld+json"]')
     var b = Array.from(a)
@@ -13,22 +14,23 @@ function getId() {
 }
 
 const regex_twitter_handle = /^https:\/\/(twitter\.com|x\.com)\/(?!home$)((intent\/user\?screen_name=([a-zA-Z0-9_]{1,15})$)|(([a-zA-Z0-9_]{1,15})(?:\/(?:with_replies|highlights|articles|media|likes))?(?:\?.*)?$))/;
-
+var memo = null;
 var id = 'not found';
 const observer_initial = new MutationObserver(async (mutationList, observer) => {
     id = getId();
+    var target_handle=document.querySelector(memoPosition);
+    if (!target_handle){
+        return;
+    }
     if (id !== 'not found'){
-        // console.log('found id :' + id.identifier);
+        console.log('found id :' + id.identifier);
         observer.disconnect();
         var handle = id.additionalName;
         console.log('handle: ' + handle);
         await chrome.runtime.sendMessage({action: 'getMemo', id: id.identifier}, function(response) {
-            memo = response.res;
-            var target_handle=Array.from(document.querySelectorAll(memoPosition))[0];
+            memo = response.res;            
             if (memo){
-
-                if (window.location.href.includes("twitter.com/home") 
-                    || window.location.href.includes("x.com/home")) return;
+                if (window.location.href.includes("twitter.com/home") || window.location.href.includes("x.com/home")) return;
                 console.log('changetarget: ' + '@' + handle + ' : \'' + memo + '\'');
                 target_handle.textContent = '@' + handle + ' : \'' + memo + '\'';
             }else{
