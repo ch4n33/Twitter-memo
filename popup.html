@@ -1,27 +1,42 @@
-<html>
+<!doctype html>
+<html lang="ko">
   <head>
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>X 메모</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <h1>Twitter Memo</h1>
-    <p>호감 가는 사용자를 메모하세요!</p>
-    <p>비워 놓고 입력 시 삭제</p>
+    <main class="popup-shell">
+      <h1>X 메모</h1>
+      <p class="intro">방문 중인 프로필에 메모를 저장합니다.</p>
 
-    <input id="memoInput" type="text" placeholder="">
-    <button id="memoButton">set memo</button>
-    <div id="tableContainer"> <!-- 수정된 부분: 테이블을 감싸는 div 요소 -->
-      <table id="memoTable" border="1">
-        <!-- 테이블의 헤더 행 -->
-        <tr>
-          <th class="key-cell">ID</th>
-          <th class="value-cell">Memo</th>
-          <th class="value-cell">Profile</th>
-        </tr>
-      </table>
-  </div>
+      <form id="memoForm">
+        <p class="profile-label">메모 대상 <strong id="currentHandle">프로필 없음</strong></p>
+        <label for="memoInput">메모</label>
+        <input id="memoInput" name="memo" type="text" autocomplete="off" aria-describedby="memoStatus" disabled>
+        <button id="memoButton" type="submit" disabled>저장</button>
+        <p id="memoStatus" class="status" role="status" aria-live="polite">현재 프로필을 불러오는 중입니다…</p>
+      </form>
 
+      <section aria-labelledby="memoListHeading">
+        <h2 id="memoListHeading">저장된 메모</h2>
+        <div id="tableContainer">
+          <table id="memoTable">
+            <thead>
+              <tr>
+                <th scope="col">ID</th>
+                <th scope="col">메모</th>
+                <th scope="col">프로필</th>
+              </tr>
+            </thead>
+            <tbody id="memoRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="scripts/shared.js"></script>
     <script src="scripts/popup.js"></script>
   </body>
 </html>

@@ -1,61 +1,139 @@
-/* 테이블을 감싸는 div에 스타일 적용 */
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #16181c;
+  background: #fff;
+}
+
+body {
+  box-sizing: border-box;
+  width: 380px;
+  margin: 0;
+  padding: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+.popup-shell {
+  display: grid;
+  gap: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 20px;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.intro,
+.profile-label,
+.status {
+  color: #536471;
+  font-size: 13px;
+}
+
+.profile-label {
+  margin-bottom: 8px;
+}
+
+#memoForm {
+  display: grid;
+  gap: 8px;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input,
+button {
+  min-height: 36px;
+  border: 1px solid #cfd9de;
+  border-radius: 6px;
+  font: inherit;
+}
+
+input {
+  width: 100%;
+  padding: 7px 9px;
+}
+
+button {
+  justify-self: start;
+  padding: 6px 14px;
+  border-color: #1d9bf0;
+  color: #fff;
+  background: #1d9bf0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  border-color: #cfd9de;
+  color: #536471;
+  background: #eff3f4;
+  cursor: not-allowed;
+}
+
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #1d9bf0;
+  outline-offset: 2px;
+}
+
+.status {
+  min-height: 18px;
+}
+
 #tableContainer {
-    max-height: 300px; /* 테이블 컨테이너의 최대 높이 지정 */
-    overflow-y: auto; /* 수직 스크롤을 활성화하여 내용이 넘치면 스크롤 가능하도록 함 */
-    overflow-x: hidden; /* 수평 스크롤을 비활성화 */
-}
-html {
-  font-family: sans-serif;
-}
-th, td {
-  border: 1px solid rgb(190,190,190);
-  padding: 4px 6px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; /* 글자가 너무 길면 생략 부호로 표시 */
-  
-}
-.key-cell {
-  max-width: 40px; /* 키 열의 최대 너비 설정 */
-}
-/* 값 셀 스타일 */
-.value-cell {
-  max-width: 150px; /* 키 열의 최대 너비 설정 */
-}
-.profile-cell
-{
-  max-width: 50px; /* 프로필 열의 최대 너비 설정 */
-  border: 1px solid #ccc; /* 테두리 스타일 */
-  background-color: #c0c0ff; /* 배경색 */
-  cursor: pointer; /* 마우스 커서를 포인터로 변경하여 클릭 가능하게 함 */
-  padding: 10px; /* 셀 내부 여백 */
-  text-align: center; /* 텍스트 가운데 정렬 */
-  border-radius: 5px; /* 모서리를 둥글게 만듦 */
-  transition: background-color 0.3s ease; /* 배경색 변경 시 부드러운 전환 효과 추가 */
-}
-.profile-cell:hover {
-  background-color: #c0ffc0; /* 마우스 호버 시 배경색 변경 */
+  max-height: 260px;
+  overflow: auto;
 }
 
 table {
+  width: 100%;
   border-collapse: collapse;
-  border: 2px solid rgb(200,200,200);
-  letter-spacing: 1px;
-  font-size: 0.8rem;
+  font-size: 12px;
 }
-th {
-  background-color: rgb(235,235,235);
-}
+
+th,
 td {
-  text-align: center;
+  padding: 6px;
+  border: 1px solid #d8dee3;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
 }
-tr:nth-child(even) td {
-  background-color: rgb(250,250,250);
+
+th {
+  position: sticky;
+  top: 0;
+  background: #f7f9fa;
 }
-tr:nth-child(odd) td {
-  background-color: rgb(245,245,245);
+
+.key-cell {
+  max-width: 105px;
 }
-caption {
-  padding: 10px;
+
+.profile-cell {
+  white-space: nowrap;
+}
+
+a {
+  color: #0969da;
 }
