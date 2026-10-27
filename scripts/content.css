@@ -1,0 +1,15 @@
+.twitter-memo-display,
+.twitter-memo-timeline-note {
+    display: block;
+    margin-top: 3px;
+    color: #536471;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.twitter-memo-timeline-note {
+    max-width: 100%;
+}

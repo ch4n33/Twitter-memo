@@ -1,9 +1,10 @@
 {
   "name": "twitter-memo",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "check": "node tools/check.mjs",
+    "package": "node tools/package.mjs",
     "test": "node --test"
   },
   "devDependencies": {

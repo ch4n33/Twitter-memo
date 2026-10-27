@@ -8,6 +8,7 @@ const { JSDOM } = require('jsdom');
 const root = path.resolve(__dirname, '..');
 const sharedSource = fs.readFileSync(path.join(root, 'scripts/shared.js'), 'utf8');
 const contentSource = fs.readFileSync(path.join(root, 'scripts/content.js'), 'utf8');
+const timelineMainSource = fs.readFileSync(path.join(root, 'scripts/timeline-main.js'), 'utf8');
 const backgroundSource = fs.readFileSync(path.join(root, 'scripts/background.js'), 'utf8');
 const popupSource = fs.readFileSync(path.join(root, 'scripts/popup.js'), 'utf8');
 const popupHtml = fs.readFileSync(path.join(root, 'popup.html'), 'utf8');
@@ -62,18 +63,25 @@ function setJsonLd(window, value) {
     document.head.appendChild(script);
 }
 
-function createContentHarness(url, profileFixture) {
+function createContentHarness(url, profileFixture, timelineItems = {}, prepareDom = null, deferProfileReads = Boolean(profileFixture)) {
     const dom = createDom(url);
     const { window } = dom;
     if (profileFixture) installProfile(window, profileFixture.handle, profileFixture.id, profileFixture.options);
+    if (prepareDom) prepareDom(window.document);
     const reads = [];
+    const timelineMemoReads = [];
+    const runtimeMessages = [];
     const runtimeListeners = [];
     const storageListeners = [];
+    const state = { timelineItems: { ...timelineItems } };
     const chrome = {
         runtime: {
             sendMessage(message) {
+                runtimeMessages.push(message);
                 if (message.action === 'getMemo') {
-                    return new Promise((resolve, reject) => reads.push({ id: message.id, resolve, reject }));
+                    if (deferProfileReads) return new Promise((resolve, reject) => reads.push({ id: message.id, resolve, reject }));
+                    timelineMemoReads.push(message.id);
+                    return Promise.resolve({ ok: true, res: state.timelineItems[message.id] });
                 }
                 return Promise.resolve({ ok: true });
             },
@@ -90,6 +98,9 @@ function createContentHarness(url, profileFixture) {
         dom,
         window,
         reads,
+        timelineMemoReads,
+        runtimeMessages,
+        state,
         runtimeListeners,
         storageListeners,
         pageWorldPushState,
@@ -102,6 +113,10 @@ function createContentHarness(url, profileFixture) {
             let response;
             runtimeListeners[0]({ action: 'tmemo_requestData' }, {}, (value) => { response = value; });
             return response;
+        },
+        updateTimelineItems(items, changes) {
+            state.timelineItems = { ...items };
+            storageListeners[0](changes, 'local');
         },
     };
 }
@@ -174,6 +189,136 @@ async function waitFor(condition, message = 'Condition did not become true.') {
 
 function getMemoMarker(document) {
     return document.querySelector('[data-twitter-memo-display="true"]');
+}
+
+function appendTweet(document, handle, {
+    postId = null,
+    quoteHandle = null,
+    quotePostId = null,
+    quoteTestId = null,
+    socialContextHandle = null,
+    mentionHandle = null,
+} = {}) {
+    const article = document.createElement('article');
+    article.setAttribute('data-testid', 'tweet');
+
+    if (socialContextHandle) {
+        const socialContext = document.createElement('div');
+        socialContext.setAttribute('data-testid', 'socialContext');
+        socialContext.appendChild(createTweetAuthorHeader(document, socialContextHandle).element);
+        article.appendChild(socialContext);
+    }
+
+    const header = createTweetAuthorHeader(document, handle);
+    article.appendChild(header.element);
+
+    const primaryStatusLink = postId ? createStatusLink(document, handle, postId) : null;
+    if (primaryStatusLink) article.appendChild(primaryStatusLink);
+
+    if (mentionHandle) {
+        const text = document.createElement('div');
+        const mention = document.createElement('a');
+        mention.href = `/${mentionHandle}`;
+        mention.textContent = `@${mentionHandle}`;
+        text.appendChild(mention);
+        article.appendChild(text);
+    }
+
+    if (quoteHandle) {
+        const quote = document.createElement('div');
+        quote.setAttribute('role', 'link');
+        if (quoteTestId) quote.setAttribute('data-testid', quoteTestId);
+        quote.appendChild(createTweetAuthorHeader(document, quoteHandle).element);
+        if (quotePostId) quote.appendChild(createStatusLink(document, quoteHandle, quotePostId));
+        article.appendChild(quote);
+    }
+
+    document.body.appendChild(article);
+    return { article, primaryStatusLink, ...header };
+}
+
+function appendRoleLinkQuoteOnlyTweet(document, handle) {
+    const article = document.createElement('article');
+    article.setAttribute('data-testid', 'tweet');
+    const quoteCard = document.createElement('div');
+    quoteCard.setAttribute('role', 'link');
+    const author = createTweetAuthorHeader(document, handle);
+    quoteCard.appendChild(author.element);
+    quoteCard.appendChild(createStatusLink(document, handle, '82001'));
+    article.appendChild(quoteCard);
+    document.body.appendChild(article);
+    return { article, ...author };
+}
+
+function createStatusLink(document, handle, postId) {
+    const link = document.createElement('a');
+    link.href = `/${handle}/status/${postId}`;
+    const time = document.createElement('time');
+    time.textContent = '2026-10-28';
+    link.appendChild(time);
+    return link;
+}
+
+function setArticleFiberTweets(article, tweetsByDepth) {
+    const maximumDepth = Math.max(32, ...Object.keys(tweetsByDepth).map(Number));
+    let fiber = null;
+    for (let depth = maximumDepth; depth >= 0; depth -= 1) {
+        const tweet = tweetsByDepth[depth];
+        fiber = { memoizedProps: tweet ? { tweet } : {}, return: fiber };
+    }
+    for (const key of Object.getOwnPropertyNames(article)) {
+        if (key.startsWith('__reactFiber$')) delete article[key];
+    }
+    const key = `__reactFiber$test_${Math.random().toString(36).slice(2)}`;
+    Object.defineProperty(article, key, { configurable: true, value: fiber });
+    return key;
+}
+
+function createMainTimelineHarness(prepareDom) {
+    const dom = createDom('https://x.com/home');
+    const { window } = dom;
+    const messages = [];
+    let visibilityObserver;
+    class TestIntersectionObserver {
+        constructor(callback) {
+            this.callback = callback;
+            this.targets = new Set();
+            visibilityObserver = this;
+        }
+        observe(target) { this.targets.add(target); }
+        unobserve(target) { this.targets.delete(target); }
+        disconnect() { this.targets.clear(); }
+        setVisible(target, visible = true) {
+            this.callback([{ target, isIntersecting: visible, intersectionRatio: visible ? 1 : 0 }]);
+        }
+    }
+    window.IntersectionObserver = TestIntersectionObserver;
+    window.postMessage = (data, targetOrigin) => messages.push({ data: { ...data }, targetOrigin });
+    if (prepareDom) prepareDom(window.document);
+    window.eval(timelineMainSource);
+    return {
+        dom,
+        window,
+        messages,
+        setVisible(article, visible = true) { visibilityObserver.setVisible(article, visible); },
+    };
+}
+
+function sendTimelineBridge(window, data, { origin = window.location.origin, source = window } = {}) {
+    window.dispatchEvent(new window.MessageEvent('message', { data, origin, source }));
+}
+
+function createTweetAuthorHeader(document, handle) {
+    const element = document.createElement('div');
+    element.setAttribute('data-testid', 'User-Name');
+    const displayName = document.createElement('a');
+    displayName.href = `/${handle}`;
+    displayName.textContent = handle;
+    const authorLink = document.createElement('a');
+    authorLink.href = `/${handle}`;
+    authorLink.textContent = `@${handle}`;
+    element.append(displayName, authorLink);
+    return { element, displayName, authorLink };
 }
 
 function submitPopup(window) {
@@ -253,7 +398,7 @@ test('visible header checks the final handle span and does not trust a matching 
 });
 
 test('content waits for header and JSON-LD, then keeps the X username untouched', async () => {
-    const harness = createContentHarness('https://x.com/home');
+    const harness = createContentHarness('https://x.com/home', null, {}, null, true);
     assert.equal(harness.reads.length, 0);
     harness.pageWorldPushState({}, '', '/X');
     const profile = installProfile(harness.window, 'X', '783214');
@@ -310,6 +455,254 @@ test('content follows page-world A→B→A DOM navigation and rejects stale memo
         { ok: false, id: 'not found' },
     );
     await settle();
+});
+
+test('MAIN resolver matches the primary status ID against bounded React ancestry', async () => {
+    const postId = '9007199254740993';
+    const userId = '9007199254740999';
+    let retweet;
+    let quoteOnly;
+    let deepWithinBound;
+    let offscreen;
+    const harness = createMainTimelineHarness((document) => {
+        retweet = appendTweet(document, 'OriginalAuthor', {
+            postId,
+            socialContextHandle: 'Reposter',
+            quoteHandle: 'QuotedAuthor',
+            quotePostId: '9007199254740995',
+        });
+        setArticleFiberTweets(retweet.article, {
+            2: { id_str: '9007199254740995', user: { id_str: '333' } },
+            13: { id_str: postId, user: { id_str: userId } },
+        });
+        quoteOnly = appendRoleLinkQuoteOnlyTweet(document, 'MentionedAuthor');
+        setArticleFiberTweets(quoteOnly.article, { 1: { id_str: '82001', user: { id_str: '444' } } });
+        deepWithinBound = appendTweet(document, 'DeepAuthor', { postId: '9007199254741011' });
+        setArticleFiberTweets(deepWithinBound.article, { 63: { id_str: '9007199254741011', user: { id_str: '9007199254741013' } } });
+        offscreen = appendTweet(document, 'OffscreenAuthor', { postId: '9007199254741003' });
+        setArticleFiberTweets(offscreen.article, { 8: { id_str: '9007199254741003', user: { id_str: '555' } } });
+    });
+
+    harness.setVisible(retweet.article);
+    harness.setVisible(quoteOnly.article);
+    harness.setVisible(deepWithinBound.article);
+    await waitFor(() => harness.messages.length === 2);
+    assert.deepEqual({ ...harness.messages[0].data }, {
+        channel: 'x-memo.timeline-id.v1',
+        type: 'visible-tweet-ids',
+        postId,
+        userId,
+    });
+    assert.equal(harness.messages[0].targetOrigin, 'https://x.com');
+    assert.equal(harness.messages[1].data.postId, '9007199254741011');
+    assert.equal(harness.messages[1].data.userId, '9007199254741013');
+    assert.deepEqual(Object.keys(harness.messages[0].data).sort(), ['channel', 'postId', 'type', 'userId']);
+    const ownNote = harness.window.document.createElement('div');
+    ownNote.setAttribute('data-twitter-memo-timeline-note', 'true');
+    ownNote.textContent = 'memo render mutation';
+    retweet.article.appendChild(ownNote);
+    await settle();
+    assert.equal(harness.messages.length, 2);
+    ownNote.remove();
+    await settle();
+    assert.equal(harness.messages.length, 2);
+
+    const fiberKey = Object.getOwnPropertyNames(retweet.article).find((key) => key.startsWith('__reactFiber$'));
+    delete retweet.article[fiberKey];
+    retweet.primaryStatusLink.querySelector('time').textContent = 'updated';
+    await waitFor(() => harness.messages.length === 3);
+    assert.equal(harness.messages[2].data.postId, postId);
+    assert.equal(harness.messages[2].data.userId, null);
+
+    const reusedPostId = '9007199254741001';
+    retweet.primaryStatusLink.href = `/OriginalAuthor/status/${reusedPostId}`;
+    setArticleFiberTweets(retweet.article, { 20: { id_str: reusedPostId, user: { id_str: '777' } } });
+    retweet.primaryStatusLink.querySelector('time').textContent = 'reused';
+    await waitFor(() => harness.messages.length === 4);
+    assert.equal(harness.messages[3].data.postId, reusedPostId);
+    assert.equal(harness.messages[3].data.userId, '777');
+    await settle();
+    assert.equal(harness.messages.length, 4);
+    harness.dom.window.close();
+});
+
+test('MAIN resolver rejects mismatched post IDs, numeric IDs, and conflicting matching fibers', async () => {
+    let mismatch;
+    let numericId;
+    let conflict;
+    let tooDeep;
+    let ambiguousDom;
+    const harness = createMainTimelineHarness((document) => {
+        mismatch = appendTweet(document, 'Alpha', { postId: '71001' });
+        setArticleFiberTweets(mismatch.article, { 4: { id_str: 71001, user: { id_str: '101' } } });
+        numericId = appendTweet(document, 'Beta', { postId: '71002' });
+        setArticleFiberTweets(numericId.article, { 8: { id_str: '71002', user: { id_str: 9007199254740993 } } });
+        conflict = appendTweet(document, 'Gamma', { postId: '71003' });
+        setArticleFiberTweets(conflict.article, {
+            3: { id_str: '71003', user: { id_str: '301' } },
+            9: { id_str: '71003', user: { id_str: '302' } },
+        });
+        tooDeep = appendTweet(document, 'Deep', { postId: '71004' });
+        setArticleFiberTweets(tooDeep.article, { 64: { id_str: '71004', user: { id_str: '304' } } });
+        ambiguousDom = appendTweet(document, 'Ambiguous', { postId: '71005' });
+        ambiguousDom.article.appendChild(createStatusLink(document, 'Other', '71006'));
+    });
+
+    harness.setVisible(mismatch.article);
+    harness.setVisible(numericId.article);
+    harness.setVisible(conflict.article);
+    harness.setVisible(tooDeep.article);
+    harness.setVisible(ambiguousDom.article);
+    await waitFor(() => harness.messages.length === 4);
+    assert.deepEqual(harness.messages.map(({ data }) => [data.postId, data.userId]), [
+        ['71001', null],
+        ['71002', null],
+        ['71003', null],
+        ['71004', null],
+    ]);
+    harness.dom.window.close();
+});
+
+test('timestamp anchors may have role=link while enclosing quote link cards stay excluded', async () => {
+    const postId = '73001';
+    const quotePostId = '73002';
+    const userId = '73003';
+    let mainTweet;
+    const mainHarness = createMainTimelineHarness((document) => {
+        mainTweet = appendTweet(document, 'PrimaryOwner', {
+            postId,
+            quoteHandle: 'QuotedOwner',
+            quotePostId,
+        });
+        mainTweet.primaryStatusLink.setAttribute('role', 'link');
+        setArticleFiberTweets(mainTweet.article, {
+            6: { id_str: quotePostId, user: { id_str: '73004' } },
+            14: { id_str: postId, user: { id_str: userId } },
+        });
+    });
+
+    mainHarness.setVisible(mainTweet.article);
+    await waitFor(() => mainHarness.messages.length === 1);
+    assert.deepEqual(
+        [mainHarness.messages[0].data.postId, mainHarness.messages[0].data.userId],
+        [postId, userId],
+    );
+    mainHarness.dom.window.close();
+
+    let isolatedTweet;
+    const isolatedHarness = createContentHarness(
+        'https://x.com/home',
+        null,
+        { [userId]: 'Primary author memo' },
+        (document) => {
+            isolatedTweet = appendTweet(document, 'PrimaryOwner', {
+                postId,
+                quoteHandle: 'QuotedOwner',
+                quotePostId,
+            });
+            isolatedTweet.primaryStatusLink.setAttribute('role', 'link');
+        },
+    );
+    sendTimelineBridge(isolatedHarness.window, {
+        channel: 'x-memo.timeline-id.v1',
+        type: 'visible-tweet-ids',
+        postId,
+        userId,
+    });
+    await waitFor(() => isolatedTweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') !== null);
+    assert.equal(isolatedTweet.article.querySelector('[data-twitter-memo-timeline-note="true"]').textContent, '메모: Primary author memo');
+    assert.deepEqual(isolatedHarness.runtimeMessages.map(({ action, id }) => [action, id]), [['getMemo', userId]]);
+    isolatedHarness.dom.window.close();
+});
+
+test('isolated bridge validates source, origin, schema, current post, and numeric memo identity', async () => {
+    const postId = '9007199254740995';
+    const largeUserId = '9007199254740999';
+    let tweet;
+    const harness = createContentHarness(
+        'https://x.com/home',
+        null,
+        { '101': 'Old Alpha note', [largeUserId]: 'Current numeric owner note', __twitterMemoProfileIndexV1: { '101': 'Alpha' } },
+        (document) => { tweet = appendTweet(document, 'Alpha', { postId }); },
+    );
+    await settle();
+    assert.equal(tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]'), null);
+    assert.equal(harness.runtimeMessages.length, 0);
+
+    const validPair = { channel: 'x-memo.timeline-id.v1', type: 'visible-tweet-ids', postId, userId: largeUserId };
+    sendTimelineBridge(harness.window, validPair, { origin: 'https://evil.example' });
+    sendTimelineBridge(harness.window, validPair, { source: {} });
+    sendTimelineBridge(harness.window, { ...validPair, type: 'storage-command' });
+    sendTimelineBridge(harness.window, { ...validPair, extra: 'unexpected' });
+    sendTimelineBridge(harness.window, { ...validPair, userId: 9007199254740999 });
+    sendTimelineBridge(harness.window, { ...validPair, postId: '71099' });
+    sendTimelineBridge(harness.window, {
+        ...validPair,
+        userId: '9'.repeat(257),
+    });
+    await settle();
+    assert.equal(tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]'), null);
+
+    sendTimelineBridge(harness.window, validPair);
+    await waitFor(() => harness.timelineMemoReads.length === 1);
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') !== null);
+    const badge = tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]');
+    assert.equal(badge.textContent, '메모: Current numeric owner note');
+    assert.deepEqual(harness.runtimeMessages.map((message) => [message.action, message.id]), [['getMemo', largeUserId]]);
+
+    sendTimelineBridge(harness.window, { ...validPair, userId: null });
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') === null);
+    harness.dom.window.close();
+});
+
+test('numeric timeline mapping handles DOM reuse and memo storage changes without observer loops', async () => {
+    let tweet;
+    const harness = createContentHarness(
+        'https://x.com/home',
+        null,
+        { '202': 'Before update', '303': 'New post memo' },
+        (document) => { tweet = appendTweet(document, 'Alpha', { postId: '88001' }); },
+    );
+    sendTimelineBridge(harness.window, {
+        channel: 'x-memo.timeline-id.v1', type: 'visible-tweet-ids', postId: '88001', userId: '202',
+    });
+    await waitFor(() => harness.timelineMemoReads.length === 1);
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') !== null);
+    assert.equal(tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]').textContent, '메모: Before update');
+
+    tweet.primaryStatusLink.href = '/RenamedHandle/status/88002';
+    tweet.primaryStatusLink.querySelector('time').textContent = 'reused';
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') === null);
+    sendTimelineBridge(harness.window, {
+        channel: 'x-memo.timeline-id.v1', type: 'visible-tweet-ids', postId: '88002', userId: '303',
+    });
+    await waitFor(() => harness.timelineMemoReads.length === 2);
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]')?.textContent === '메모: New post memo');
+    assert.equal(tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]').textContent, '메모: New post memo');
+
+    const currentIndex = { '202': 'Before update', '303': 'New post memo' };
+    harness.updateTimelineItems(
+        { ...currentIndex, '303': 'Updated numeric memo' },
+        { '303': { oldValue: 'New post memo', newValue: 'Updated numeric memo' } },
+    );
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]')?.textContent === '메모: Updated numeric memo');
+    harness.updateTimelineItems(
+        { '202': 'Before update' },
+        { '303': { oldValue: 'Updated numeric memo' } },
+    );
+    await waitFor(() => tweet.article.querySelector('[data-twitter-memo-timeline-note="true"]') === null);
+
+    harness.pageWorldPushState({}, '', '/search');
+    const afterSpaNavigation = appendTweet(harness.window.document, 'RenamedHandle', { postId: '88003' });
+    sendTimelineBridge(harness.window, {
+        channel: 'x-memo.timeline-id.v1', type: 'visible-tweet-ids', postId: '88003', userId: '202',
+    });
+    await waitFor(() => afterSpaNavigation.article.querySelector('[data-twitter-memo-timeline-note="true"]') !== null);
+    assert.equal(afterSpaNavigation.article.querySelector('[data-twitter-memo-timeline-note="true"]').textContent, '메모: Before update');
+
+    await settle();
+    assert.deepEqual(harness.runtimeMessages.map((message) => [message.action, message.id]), [['getMemo', '202'], ['getMemo', '303']]);
+    harness.dom.window.close();
 });
 
 test('storage changes update the active memo and invalidate an older initial read', async () => {

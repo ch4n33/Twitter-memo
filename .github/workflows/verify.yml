@@ -20,3 +20,4 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: node tools/package.mjs "$RUNNER_TEMP/x-memo.zip"
