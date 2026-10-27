@@ -1,7 +1,7 @@
 {
   "name": "X Memo",
   "description": "Save notes on X profiles.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "manifest_version": 3,
   "minimum_chrome_version": "102",
   "action": {
@@ -23,6 +23,9 @@
       "js": [
         "scripts/shared.js",
         "scripts/content.js"
+      ],
+      "css": [
+        "scripts/content.css"
       ],
       "matches": [
         "https://twitter.com/*",

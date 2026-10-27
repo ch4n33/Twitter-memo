@@ -1,4 +1,4 @@
-const { getValidatedProfile, getVisibleUserNameElement } = globalThis.TwitterMemo;
+const { getTimelineMemoMap, getValidatedProfile, getVisibleUserNameElement, normalizeHandle } = globalThis.TwitterMemo;
 
 let activeProfile = null;
 let activeMemo = '';
@@ -9,9 +9,157 @@ let profileGeneration = 0;
 let lastObservedHref = window.location.href;
 let memoElement = null;
 let refreshScheduled = false;
+let timelineMemoByHandle = new Map();
+let timelineIndexGeneration = 0;
+let timelineReloadScheduled = false;
+const timelineMemoElements = new WeakMap();
+
+const TWEET_SELECTOR = 'article[data-testid="tweet"]';
+const TWEET_AUTHOR_SELECTOR = '[data-testid="User-Name"]';
+const TIMELINE_NOTE_ATTRIBUTE = 'data-twitter-memo-timeline-note';
+
+function isWithinTimelineMemoElement(node) {
+    let element = node && node.nodeType === 1 ? node : node && node.parentElement;
+    while (element) {
+        if (element.getAttribute && element.getAttribute(TIMELINE_NOTE_ATTRIBUTE) === 'true') return true;
+        element = element.parentElement;
+    }
+    return false;
+}
+
+function removeTimelineMemo(article) {
+    const element = timelineMemoElements.get(article);
+    if (element && element.parentNode) element.parentNode.removeChild(element);
+    timelineMemoElements.delete(article);
+}
+
+function isExcludedTweetAuthorHeader(header, article) {
+    let element = header;
+    while (element && element !== article) {
+        if (element.tagName === 'BLOCKQUOTE') return true;
+        if (element.getAttribute && element.getAttribute('role') === 'link') return true;
+        const testId = (element.getAttribute && element.getAttribute('data-testid') || '').toLowerCase();
+        if (testId === 'socialcontext' || testId.includes('quote')) return true;
+        element = element.parentElement;
+    }
+    return false;
+}
+
+function getPrimaryTweetAuthor(article) {
+    for (const header of article.querySelectorAll(TWEET_AUTHOR_SELECTOR)) {
+        if (header.closest(TWEET_SELECTOR) !== article || isExcludedTweetAuthorHeader(header, article)) continue;
+        for (const anchor of header.querySelectorAll('a[href]')) {
+            const label = typeof anchor.textContent === 'string' ? anchor.textContent.trim() : '';
+            if (!label.startsWith('@')) continue;
+            const displayedHandle = normalizeHandle(label);
+            const linkedHandle = globalThis.TwitterMemo.getProfileHandle(anchor.href);
+            if (displayedHandle && linkedHandle && displayedHandle.toLowerCase() === linkedHandle.toLowerCase()) {
+                return { header, handle: displayedHandle.toLowerCase() };
+            }
+        }
+    }
+    return null;
+}
+
+function renderTimelineTweet(article) {
+    if (!article || !article.isConnected) return;
+    const author = getPrimaryTweetAuthor(article);
+    const memo = author && timelineMemoByHandle.get(author.handle);
+    if (!memo || !memo.memo) {
+        removeTimelineMemo(article);
+        return;
+    }
+
+    let element = timelineMemoElements.get(article);
+    if (!element) {
+        element = document.createElement('div');
+        element.setAttribute(TIMELINE_NOTE_ATTRIBUTE, 'true');
+        element.className = 'twitter-memo-timeline-note';
+        timelineMemoElements.set(article, element);
+    }
+    element.setAttribute('data-profile-id', memo.id);
+    element.setAttribute('data-profile-handle', memo.handle);
+    const noteText = `메모: ${memo.memo}`;
+    if (element.textContent !== noteText) element.textContent = noteText;
+
+    const parent = author.header.parentNode;
+    if (!parent) {
+        removeTimelineMemo(article);
+        return;
+    }
+    if (element.parentNode !== parent || element.previousSibling !== author.header) {
+        if (element.parentNode) element.parentNode.removeChild(element);
+        parent.insertBefore(element, author.header.nextSibling);
+    }
+}
+
+function refreshVisibleTimelineTweets() {
+    for (const article of document.querySelectorAll(TWEET_SELECTOR)) renderTimelineTweet(article);
+}
+
+function loadTimelineMemoIndex() {
+    const requestGeneration = ++timelineIndexGeneration;
+    chrome.runtime.sendMessage({ action: 'listMemo' }).then((response) => {
+        if (requestGeneration !== timelineIndexGeneration || !response || response.ok !== true) return;
+        timelineMemoByHandle = getTimelineMemoMap(response.res);
+        refreshVisibleTimelineTweets();
+    }).catch(() => {
+        // Keep the last successful index during transient storage failures.
+    });
+}
+
+function requestTimelineMemoIndexReload() {
+    if (timelineReloadScheduled) return;
+    timelineReloadScheduled = true;
+    Promise.resolve().then(() => {
+        timelineReloadScheduled = false;
+        loadTimelineMemoIndex();
+    });
+}
+
+function rememberCurrentProfileMemo(profile, memo) {
+    if (!profile || typeof memo !== 'string' || memo.length === 0) return;
+    chrome.runtime.sendMessage({ action: 'rememberMemoProfile', id: profile.id, handle: profile.handle }).catch(() => {});
+}
+
+function getTweetArticle(node) {
+    let element = node && node.nodeType === 1 ? node : node && node.parentElement;
+    if (!element || !element.closest) return null;
+    return element.closest(TWEET_SELECTOR);
+}
+
+function collectTimelineArticles(mutations) {
+    const articles = new Set();
+    const addFromNode = (node) => {
+        if (!node || isWithinTimelineMemoElement(node) || isWithinMemoElement(node)) return;
+        const element = node.nodeType === 1 ? node : node.parentElement;
+        if (!element) return;
+        if (element.matches && element.matches(TWEET_SELECTOR)) articles.add(element);
+        const closest = getTweetArticle(element);
+        if (closest) articles.add(closest);
+        if (element.querySelectorAll) {
+            for (const article of element.querySelectorAll(TWEET_SELECTOR)) articles.add(article);
+        }
+    };
+    for (const mutation of mutations) {
+        if (isWithinTimelineMemoElement(mutation.target) || isWithinMemoElement(mutation.target)) continue;
+        addFromNode(mutation.target);
+        for (const node of [...mutation.addedNodes, ...mutation.removedNodes]) addFromNode(node);
+    }
+    return articles;
+}
 
 function currentProfile() {
-    return getValidatedProfile(window.location.href, document);
+    const href = readLocationHref();
+    return href ? getValidatedProfile(href, document) : null;
+}
+
+function readLocationHref() {
+    try {
+        return window.location.href;
+    } catch (error) {
+        return null;
+    }
 }
 
 function sameProfile(left, right) {
@@ -74,6 +222,7 @@ function loadMemo(profile, requestGeneration) {
         memoLoaded = true;
         memoRequestGeneration = -1;
         renderMemo(profile, activeMemo);
+        rememberCurrentProfileMemo(profile, activeMemo);
     }).catch(() => {
         if (requestToken !== memoReadToken || requestGeneration !== profileGeneration || !sameProfile(activeProfile, profile)) return;
         if (!sameProfile(currentProfile(), profile)) {
@@ -88,11 +237,13 @@ function loadMemo(profile, requestGeneration) {
 }
 
 function noteHrefChange() {
-    const href = window.location.href;
+    const href = readLocationHref();
+    if (href === null) return false;
     if (href !== lastObservedHref) {
         lastObservedHref = href;
         profileGeneration += 1;
     }
+    return true;
 }
 
 function syncProfile() {
@@ -183,12 +334,18 @@ function wrapHistoryMethod(methodName) {
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== 'local' || !activeProfile || !Object.prototype.hasOwnProperty.call(changes, activeProfile.id)) return;
-    const change = changes[activeProfile.id];
-    memoReadToken += 1;
-    activeMemo = change && typeof change.newValue === 'string' ? change.newValue : '';
-    memoLoaded = true;
-    renderMemo(activeProfile, activeMemo);
+    if (areaName !== 'local') return;
+    if (activeProfile && Object.prototype.hasOwnProperty.call(changes, activeProfile.id)) {
+        const change = changes[activeProfile.id];
+        memoReadToken += 1;
+        activeMemo = change && typeof change.newValue === 'string' ? change.newValue : '';
+        memoLoaded = true;
+        renderMemo(activeProfile, activeMemo);
+    }
+    const hasMemoChange = Object.keys(changes).some((key) => TwitterMemo.isValidMemoId(key));
+    if (hasMemoChange || Object.prototype.hasOwnProperty.call(changes, TwitterMemo.PROFILE_INDEX_STORAGE_KEY)) {
+        requestTimelineMemoIndexReload();
+    }
 });
 
 wrapHistoryMethod('pushState');
@@ -197,12 +354,34 @@ window.addEventListener('popstate', onPotentialNavigation);
 window.addEventListener('hashchange', onPotentialNavigation);
 
 const identityObserver = new MutationObserver((mutations) => {
-    const hrefChanged = window.location.href !== lastObservedHref;
+    const href = readLocationHref();
+    if (href === null) return;
+    const hrefChanged = href !== lastObservedHref;
     if (hrefChanged) noteHrefChange();
     if (hrefChanged || mutations.some(shouldRefreshForMutation)) scheduleRefresh();
 });
 if (document.documentElement) {
     identityObserver.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+}
+
+const timelineObserver = new MutationObserver((mutations) => {
+    const href = readLocationHref();
+    if (href === null) return;
+    const hrefChanged = href !== lastObservedHref;
+    if (hrefChanged) {
+        noteHrefChange();
+        scheduleRefresh();
+    }
+    for (const article of collectTimelineArticles(mutations)) renderTimelineTweet(article);
+});
+if (document.documentElement) {
+    timelineObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['href'],
+        childList: true,
+        characterData: true,
+        subtree: true,
+    });
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -213,3 +392,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 syncProfile();
+loadTimelineMemoIndex();

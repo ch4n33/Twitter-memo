@@ -163,7 +163,7 @@ async function saveMemo(event) {
         currentHandle.textContent = `@${current.handle}`;
 
         const memo = memoInput.value;
-        const response = await chrome.runtime.sendMessage({ action: 'setMemo', id: profile.id, memo });
+        const response = await chrome.runtime.sendMessage({ action: 'setMemo', id: profile.id, handle: profile.handle, memo });
         if (!response || response.ok !== true) {
             throw new Error(response && response.error ? response.error : '저장을 확인하지 못했습니다.');
         }

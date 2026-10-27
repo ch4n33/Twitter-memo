@@ -1,4 +1,5 @@
 globalThis.TwitterMemo = (() => {
+    const PROFILE_INDEX_STORAGE_KEY = '__twitterMemoProfileIndexV1';
     const HANDLE_PATTERN = /^[a-zA-Z0-9_]{1,15}$/;
     const SUBROUTES = new Set(['with_replies', 'reposts', 'highlights', 'articles', 'media', 'likes']);
     const RESERVED_PATHS = new Set([
@@ -63,6 +64,56 @@ globalThis.TwitterMemo = (() => {
 
     function isValidMemoId(id) {
         return typeof id === 'string' && /^[1-9]\d*$/.test(id);
+    }
+
+    function normalizeProfileIndex(index) {
+        const normalized = {};
+        if (!index || typeof index !== 'object' || Array.isArray(index)) return normalized;
+        for (const [id, value] of Object.entries(index)) {
+            const handle = normalizeHandle(value);
+            if (isValidMemoId(id) && handle) normalized[id] = handle.toLowerCase();
+        }
+        return normalized;
+    }
+
+    function addVerifiedMemoProfile(index, id, handle) {
+        const normalizedHandle = normalizeHandle(handle);
+        if (!isValidMemoId(id) || !normalizedHandle) return normalizeProfileIndex(index);
+        const handleKey = normalizedHandle.toLowerCase();
+        const next = {};
+        for (const [existingId, existingHandle] of Object.entries(normalizeProfileIndex(index))) {
+            if (existingId !== id && existingHandle !== handleKey) next[existingId] = existingHandle;
+        }
+        next[id] = handleKey;
+        return next;
+    }
+
+    function removeMemoProfile(index, id) {
+        const next = normalizeProfileIndex(index);
+        if (isValidMemoId(id)) delete next[id];
+        return next;
+    }
+
+    function getTimelineMemoMap(items) {
+        const storageItems = items && typeof items === 'object' ? items : {};
+        const index = normalizeProfileIndex(storageItems[PROFILE_INDEX_STORAGE_KEY]);
+        const memoByHandle = new Map();
+        const handleOwners = new Map();
+        const ambiguousHandles = new Set();
+        for (const [id, handle] of Object.entries(index)) {
+            if (ambiguousHandles.has(handle)) continue;
+            const existingOwner = handleOwners.get(handle);
+            if (existingOwner && existingOwner !== id) {
+                memoByHandle.delete(handle);
+                ambiguousHandles.add(handle);
+                continue;
+            }
+            handleOwners.set(handle, id);
+            const memo = storageItems[id];
+            if (typeof memo !== 'string' || memo.length === 0) continue;
+            memoByHandle.set(handle, { id, handle, memo });
+        }
+        return memoByHandle;
     }
 
     function collectProfileEntities(value, results = []) {
@@ -142,6 +193,9 @@ globalThis.TwitterMemo = (() => {
     }
 
     return Object.freeze({
+        PROFILE_INDEX_STORAGE_KEY,
+        addVerifiedMemoProfile,
+        getTimelineMemoMap,
         getJsonLdProfileId,
         getProfileHandle,
         getValidatedProfile,
@@ -149,6 +203,8 @@ globalThis.TwitterMemo = (() => {
         isValidMemoId,
         normalizeHandle,
         normalizeNumericId,
+        normalizeProfileIndex,
+        removeMemoProfile,
         visibleHeaderMatches,
     });
 })();
