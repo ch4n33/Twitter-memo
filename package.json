@@ -1,0 +1,8 @@
+{
+  "name": "twitter-memo",
+  "version": "0.0.4",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
