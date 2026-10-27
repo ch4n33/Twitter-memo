@@ -1,4 +1,4 @@
-const { getTimelineMemoMap, getValidatedProfile, getVisibleUserNameElement, normalizeHandle } = globalThis.TwitterMemo;
+const { getValidatedProfile, getVisibleUserNameElement, isValidMemoId } = globalThis.TwitterMemo;
 
 let activeProfile = null;
 let activeMemo = '';
@@ -9,14 +9,25 @@ let profileGeneration = 0;
 let lastObservedHref = window.location.href;
 let memoElement = null;
 let refreshScheduled = false;
-let timelineMemoByHandle = new Map();
-let timelineIndexGeneration = 0;
-let timelineReloadScheduled = false;
+const timelineMemosById = new Map();
+const timelineUserByPostId = new Map();
+let pendingTimelineMemoReads = 0;
 const timelineMemoElements = new WeakMap();
 
 const TWEET_SELECTOR = 'article[data-testid="tweet"]';
 const TWEET_AUTHOR_SELECTOR = '[data-testid="User-Name"]';
 const TIMELINE_NOTE_ATTRIBUTE = 'data-twitter-memo-timeline-note';
+const BRIDGE_CHANNEL = 'x-memo.timeline-id.v1';
+const MAX_BRIDGE_ID_DIGITS = 256;
+const MAX_CACHED_POST_IDS = 300;
+const MAX_CACHED_USER_MEMOS = 300;
+const MAX_PENDING_MEMO_READS = 16;
+const MAX_BRIDGE_MESSAGE_LENGTH = 700;
+const EMPTY_BRIDGE_MESSAGE_LENGTH = '{"channel":"","type":"","postId":"","userId":""}'.length;
+
+function isBridgeId(value) {
+    return isValidMemoId(value) && value.length <= MAX_BRIDGE_ID_DIGITS;
+}
 
 function isWithinTimelineMemoElement(node) {
     let element = node && node.nodeType === 1 ? node : node && node.parentElement;
@@ -33,11 +44,12 @@ function removeTimelineMemo(article) {
     timelineMemoElements.delete(article);
 }
 
-function isExcludedTweetAuthorHeader(header, article) {
-    let element = header;
+function isExcludedFromPrimary(element, article, ignoreCandidateRoleLink = false) {
+    const candidate = element;
     while (element && element !== article) {
         if (element.tagName === 'BLOCKQUOTE') return true;
-        if (element.getAttribute && element.getAttribute('role') === 'link') return true;
+        if (element.getAttribute && element.getAttribute('role') === 'link' &&
+            !(ignoreCandidateRoleLink && element === candidate)) return true;
         const testId = (element.getAttribute && element.getAttribute('data-testid') || '').toLowerCase();
         if (testId === 'socialcontext' || testId.includes('quote')) return true;
         element = element.parentElement;
@@ -45,27 +57,44 @@ function isExcludedTweetAuthorHeader(header, article) {
     return false;
 }
 
-function getPrimaryTweetAuthor(article) {
-    for (const header of article.querySelectorAll(TWEET_AUTHOR_SELECTOR)) {
-        if (header.closest(TWEET_SELECTOR) !== article || isExcludedTweetAuthorHeader(header, article)) continue;
-        for (const anchor of header.querySelectorAll('a[href]')) {
-            const label = typeof anchor.textContent === 'string' ? anchor.textContent.trim() : '';
-            if (!label.startsWith('@')) continue;
-            const displayedHandle = normalizeHandle(label);
-            const linkedHandle = globalThis.TwitterMemo.getProfileHandle(anchor.href);
-            if (displayedHandle && linkedHandle && displayedHandle.toLowerCase() === linkedHandle.toLowerCase()) {
-                return { header, handle: displayedHandle.toLowerCase() };
-            }
+function getPrimaryTweetPostId(article) {
+    const postIds = new Set();
+    for (const anchor of article.querySelectorAll('a[href]')) {
+        if (anchor.closest(TWEET_SELECTOR) !== article || isExcludedFromPrimary(anchor, article, true)) continue;
+        if (!anchor.querySelector('time')) continue;
+        let url;
+        try {
+            url = new URL(anchor.href, window.location.href);
+        } catch (error) {
+            continue;
         }
+        if (url.origin !== window.location.origin) continue;
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (parts.length < 3 || !/^[A-Za-z0-9_]{1,15}$/.test(parts[0]) || parts[1].toLowerCase() !== 'status') continue;
+        if (isBridgeId(parts[2])) postIds.add(parts[2]);
+    }
+    return postIds.size === 1 ? postIds.values().next().value : null;
+}
+
+function getPrimaryTweetAuthorHeader(article) {
+    for (const header of article.querySelectorAll(TWEET_AUTHOR_SELECTOR)) {
+        if (header.closest(TWEET_SELECTOR) === article && !isExcludedFromPrimary(header, article)) return header;
     }
     return null;
 }
 
 function renderTimelineTweet(article) {
     if (!article || !article.isConnected) return;
-    const author = getPrimaryTweetAuthor(article);
-    const memo = author && timelineMemoByHandle.get(author.handle);
-    if (!memo || !memo.memo) {
+    const postId = getPrimaryTweetPostId(article);
+    const userId = postId && timelineUserByPostId.get(postId);
+    if (!userId) {
+        removeTimelineMemo(article);
+        return;
+    }
+    const entry = touchTimelineMemoEntry(userId);
+    if (!entry) requestTimelineMemo(userId);
+    const authorHeader = getPrimaryTweetAuthorHeader(article);
+    if (!entry || entry.status !== 'loaded' || !entry.memo || !authorHeader) {
         removeTimelineMemo(article);
         return;
     }
@@ -77,19 +106,17 @@ function renderTimelineTweet(article) {
         element.className = 'twitter-memo-timeline-note';
         timelineMemoElements.set(article, element);
     }
-    element.setAttribute('data-profile-id', memo.id);
-    element.setAttribute('data-profile-handle', memo.handle);
-    const noteText = `메모: ${memo.memo}`;
+    const noteText = `메모: ${entry.memo}`;
     if (element.textContent !== noteText) element.textContent = noteText;
 
-    const parent = author.header.parentNode;
+    const parent = authorHeader.parentNode;
     if (!parent) {
         removeTimelineMemo(article);
         return;
     }
-    if (element.parentNode !== parent || element.previousSibling !== author.header) {
+    if (element.parentNode !== parent || element.previousSibling !== authorHeader) {
         if (element.parentNode) element.parentNode.removeChild(element);
-        parent.insertBefore(element, author.header.nextSibling);
+        parent.insertBefore(element, authorHeader.nextSibling);
     }
 }
 
@@ -97,29 +124,135 @@ function refreshVisibleTimelineTweets() {
     for (const article of document.querySelectorAll(TWEET_SELECTOR)) renderTimelineTweet(article);
 }
 
-function loadTimelineMemoIndex() {
-    const requestGeneration = ++timelineIndexGeneration;
-    chrome.runtime.sendMessage({ action: 'listMemo' }).then((response) => {
-        if (requestGeneration !== timelineIndexGeneration || !response || response.ok !== true) return;
-        timelineMemoByHandle = getTimelineMemoMap(response.res);
-        refreshVisibleTimelineTweets();
+function touchTimelineMemoEntry(userId) {
+    const entry = timelineMemosById.get(userId);
+    if (!entry) return null;
+    timelineMemosById.delete(userId);
+    timelineMemosById.set(userId, entry);
+    return entry;
+}
+
+function storeTimelineMemoEntry(userId, entry) {
+    timelineMemosById.delete(userId);
+    timelineMemosById.set(userId, entry);
+    while (timelineMemosById.size > MAX_CACHED_USER_MEMOS) {
+        timelineMemosById.delete(timelineMemosById.keys().next().value);
+    }
+}
+
+function renderTimelineTweetsForUserId(userId) {
+    for (const article of document.querySelectorAll(TWEET_SELECTOR)) {
+        const postId = getPrimaryTweetPostId(article);
+        if (postId && timelineUserByPostId.get(postId) === userId) renderTimelineTweet(article);
+    }
+}
+
+function startPendingTimelineMemoReads() {
+    if (pendingTimelineMemoReads >= MAX_PENDING_MEMO_READS) return;
+    for (const [userId, entry] of timelineMemosById) {
+        if (entry.status !== 'waiting') continue;
+        timelineMemosById.delete(userId);
+        requestTimelineMemo(userId);
+        if (pendingTimelineMemoReads >= MAX_PENDING_MEMO_READS) return;
+    }
+}
+
+function requestTimelineMemo(userId) {
+    const existing = touchTimelineMemoEntry(userId);
+    if (existing) return;
+    if (pendingTimelineMemoReads >= MAX_PENDING_MEMO_READS) {
+        storeTimelineMemoEntry(userId, { status: 'waiting', memo: '' });
+        return;
+    }
+
+    const entry = { status: 'loading', memo: '' };
+    storeTimelineMemoEntry(userId, entry);
+    pendingTimelineMemoReads += 1;
+    Promise.resolve().then(() => chrome.runtime.sendMessage({ action: 'getMemo', id: userId })).then((response) => {
+        if (timelineMemosById.get(userId) !== entry) return;
+        storeTimelineMemoEntry(userId, {
+            status: 'loaded',
+            memo: response && response.ok === true && typeof response.res === 'string' ? response.res : '',
+        });
+        renderTimelineTweetsForUserId(userId);
     }).catch(() => {
-        // Keep the last successful index during transient storage failures.
+        if (timelineMemosById.get(userId) === entry) {
+            storeTimelineMemoEntry(userId, { status: 'loaded', memo: '' });
+            renderTimelineTweetsForUserId(userId);
+        }
+    }).finally(() => {
+        pendingTimelineMemoReads -= 1;
+        startPendingTimelineMemoReads();
     });
 }
 
-function requestTimelineMemoIndexReload() {
-    if (timelineReloadScheduled) return;
-    timelineReloadScheduled = true;
-    Promise.resolve().then(() => {
-        timelineReloadScheduled = false;
-        loadTimelineMemoIndex();
-    });
+function setTimelineMemoFromStorage(userId, memo) {
+    storeTimelineMemoEntry(userId, { status: 'loaded', memo: typeof memo === 'string' ? memo : '' });
+    renderTimelineTweetsForUserId(userId);
 }
 
-function rememberCurrentProfileMemo(profile, memo) {
-    if (!profile || typeof memo !== 'string' || memo.length === 0) return;
-    chrome.runtime.sendMessage({ action: 'rememberMemoProfile', id: profile.id, handle: profile.handle }).catch(() => {});
+function validateTimelineBridgeEvent(event) {
+    if (!event || event.source !== window || typeof event.origin !== 'string') return null;
+    let pageOrigin;
+    try {
+        const url = new URL(window.location.href);
+        if (url.protocol !== 'https:' || !['x.com', 'twitter.com'].includes(url.hostname.toLowerCase())) return null;
+        pageOrigin = url.origin;
+    } catch (error) {
+        return null;
+    }
+    if (event.origin !== pageOrigin) return null;
+
+    const data = event.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    let keys;
+    let fields;
+    try {
+        keys = Reflect.ownKeys(data).sort();
+        if (keys.length !== 4 || keys.some((key) => typeof key !== 'string') || keys.join(',') !== 'channel,postId,type,userId') return null;
+        fields = Object.fromEntries(keys.map((key) => {
+            const descriptor = Object.getOwnPropertyDescriptor(data, key);
+            return [key, descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : undefined];
+        }));
+    } catch (error) {
+        return null;
+    }
+    if (fields.channel !== BRIDGE_CHANNEL || fields.type !== 'visible-tweet-ids' || !isBridgeId(fields.postId)) return null;
+    if (fields.userId !== null && !isBridgeId(fields.userId)) return null;
+    const messageSize = EMPTY_BRIDGE_MESSAGE_LENGTH + fields.channel.length + fields.type.length + fields.postId.length +
+        (fields.userId === null ? 2 : fields.userId.length);
+    if (messageSize > MAX_BRIDGE_MESSAGE_LENGTH) return null;
+    return { postId: fields.postId, userId: fields.userId };
+}
+
+function hasCurrentPost(articleId) {
+    for (const article of document.querySelectorAll(TWEET_SELECTOR)) {
+        if (getPrimaryTweetPostId(article) === articleId) return true;
+    }
+    return false;
+}
+
+function updateTimelineUserForPost(postId, userId) {
+    if (userId === null) {
+        timelineUserByPostId.delete(postId);
+        return;
+    }
+    timelineUserByPostId.delete(postId);
+    timelineUserByPostId.set(postId, userId);
+    while (timelineUserByPostId.size > MAX_CACHED_POST_IDS) {
+        timelineUserByPostId.delete(timelineUserByPostId.keys().next().value);
+    }
+}
+
+function onTimelineBridgeMessage(event) {
+    const pair = validateTimelineBridgeEvent(event);
+    if (!pair) return;
+    if (pair.userId !== null && !hasCurrentPost(pair.postId)) return;
+    updateTimelineUserForPost(pair.postId, pair.userId);
+    if (pair.userId !== null) requestTimelineMemo(pair.userId);
+    for (const article of document.querySelectorAll(TWEET_SELECTOR)) {
+        if (getPrimaryTweetPostId(article) === pair.postId) renderTimelineTweet(article);
+    }
 }
 
 function getTweetArticle(node) {
@@ -222,7 +355,6 @@ function loadMemo(profile, requestGeneration) {
         memoLoaded = true;
         memoRequestGeneration = -1;
         renderMemo(profile, activeMemo);
-        rememberCurrentProfileMemo(profile, activeMemo);
     }).catch(() => {
         if (requestToken !== memoReadToken || requestGeneration !== profileGeneration || !sameProfile(activeProfile, profile)) return;
         if (!sameProfile(currentProfile(), profile)) {
@@ -342,9 +474,21 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         memoLoaded = true;
         renderMemo(activeProfile, activeMemo);
     }
-    const hasMemoChange = Object.keys(changes).some((key) => TwitterMemo.isValidMemoId(key));
-    if (hasMemoChange || Object.prototype.hasOwnProperty.call(changes, TwitterMemo.PROFILE_INDEX_STORAGE_KEY)) {
-        requestTimelineMemoIndexReload();
+    for (const id of Object.keys(changes)) {
+        if (!isBridgeId(id)) continue;
+        let isUsedByTimeline = timelineMemosById.has(id);
+        if (!isUsedByTimeline) {
+            for (const userId of timelineUserByPostId.values()) {
+                if (userId === id) {
+                    isUsedByTimeline = true;
+                    break;
+                }
+            }
+        }
+        if (isUsedByTimeline) {
+            const change = changes[id];
+            setTimelineMemoFromStorage(id, change && change.newValue);
+        }
     }
 });
 
@@ -384,6 +528,8 @@ if (document.documentElement) {
     });
 }
 
+window.addEventListener('message', onTimelineBridgeMessage);
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!request || request.action !== 'tmemo_requestData') return false;
     const profile = syncProfile();
@@ -392,4 +538,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 syncProfile();
-loadTimelineMemoIndex();

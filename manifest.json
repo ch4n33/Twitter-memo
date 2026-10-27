@@ -1,9 +1,9 @@
 {
   "name": "X Memo",
   "description": "Save notes on X profiles.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "manifest_version": 3,
-  "minimum_chrome_version": "102",
+  "minimum_chrome_version": "111",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "logos/16.png"
@@ -30,7 +30,20 @@
       "matches": [
         "https://twitter.com/*",
         "https://x.com/*"
-      ]
+      ],
+      "run_at": "document_end",
+      "world": "ISOLATED"
+    },
+    {
+      "js": [
+        "scripts/timeline-main.js"
+      ],
+      "matches": [
+        "https://twitter.com/*",
+        "https://x.com/*"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ]
 }
