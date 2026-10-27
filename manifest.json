@@ -1,8 +1,9 @@
 {
-  "name": "twitter memo",
-  "description": "Track anyone on Twitter and make notes on their profile.",
-  "version": "0.0.4",
+  "name": "X Memo",
+  "description": "Save notes on X profiles.",
+  "version": "0.1.0",
   "manifest_version": 3,
+  "minimum_chrome_version": "102",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "logos/16.png"
@@ -11,7 +12,7 @@
     "128": "logos/128.png"
   },
   "permissions": [
-    "tabs",
+    "activeTab",
     "storage"
   ],
   "background": {
@@ -20,6 +21,7 @@
   "content_scripts": [
     {
       "js": [
+        "scripts/shared.js",
         "scripts/content.js"
       ],
       "matches": [
